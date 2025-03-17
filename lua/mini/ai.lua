@@ -539,9 +539,11 @@ MiniAi.config = {
     around_last = 'al',
     inside_last = 'il',
 
-    -- Move cursor to corresponding edge of `a` textobject
-    goto_left = 'g[',
-    goto_right = 'g]',
+    -- Move to textobject edges
+    goto_next_end = '',
+    goto_next_start = '',
+    goto_prev_start = '',
+    goto_prev_end = '',
   },
 
   -- Number of lines within which textobject is searched
@@ -610,46 +612,157 @@ end
 
 --- Move cursor to edge of textobject
 ---
----@param side string One of `'left'` or `'right'`.
----@param ai_type string One of `'a'` or `'i'`.
 ---@param id string Single character string representing textobject id.
+---@param mode string String representing mode.
 ---@param opts table|nil Same as in |MiniAi.find_textobject()|.
+---   `opts.search_method` determines direction (left/right) of the motion, in
+---   this case.
 ---   `opts.n_times` means number of actual jumps (important when cursor
 ---   already on the potential jump spot).
-MiniAi.move_cursor = function(side, ai_type, id, opts)
-  if not (side == 'left' or side == 'right') then H.error([[`side` should be one of 'left' or 'right'.]]) end
+MiniAi.move_cursor = function(id, mode, opts)
   opts = opts or {}
   local init_pos = vim.api.nvim_win_get_cursor(0)
 
   -- Compute single textobject first to find out if it would move the cursor.
   -- If not, then eventual `n_times` should be bigger by 1 to imitate `n_times`
-  -- *actual* jumps. This implements consecutive jumps and has logic of "If
-  -- cursor is strictly inside region, move to its side first".
+  -- *actual* jumps.
   local new_opts = vim.tbl_deep_extend('force', opts, { n_times = 1 })
-  local tobj_single = MiniAi.find_textobject(ai_type, id, new_opts)
-  if tobj_single == nil then return end
-  local tobj_side = side == 'left' and 'from' or 'to'
+  local tobj = MiniAi.find_textobject('i', id, new_opts)
 
+  if tobj == nil then return end
+
+  local tobj_side
+
+  if opts.search_method == 'cover_or_next' or opts.search_method == 'prev' then
+    -- Cursor to textobject end
+    tobj_side = 'to'
+  end
+  if opts.search_method == 'cover_or_prev' or opts.search_method == 'next' then
+    -- Cursor to textobject beginning
+    tobj_side = 'from'
+  end
+
+  -- === DUPLICATE BEGIN ===
   -- Allow empty region
-  tobj_single.to = tobj_single.to or tobj_single.from
+  local region_is_empty = false
+  if tobj.to == nil then
+    region_is_empty = true -- Need to correct col on an 'end' movement
+    tobj.to = tobj.from
+  end
+
+  -- vvvvv Unused vvvvv
+  local real_line = tobj[tobj_side].line
+  local real_col = tobj[tobj_side].col
+  -- ^^^^^^^^^^^^^^^^^^
+  local target_line = real_line
+  local target_col = real_col
+
+  -- Final cursor position edge cases
+  if target_col > #vim.fn.getline(target_line) then
+    -- Cursor tries to land on line-length + 1
+    -- On opening or closing brace like:
+    -- {
+    --   abc
+    --   def
+    -- }
+    -- (on closing brace only if it's not indented, cursor tries to land on line-length + 1 of the previous line)
+    target_line = target_line + 1
+    target_col = vim.fn.indent(target_line)
+  elseif tobj_side == 'from' or region_is_empty or target_col == #vim.fn.getline(target_line) then
+    target_col = target_col - 1
+  end
+  -- === DUPLICATE END ===
 
   new_opts.n_times = opts.n_times or 1
-  if (init_pos[1] == tobj_single[tobj_side].line) and (init_pos[2] == tobj_single[tobj_side].col - 1) then
+
+  -- Is cursor already at the target?
+  if (init_pos[1] == target_line) and (init_pos[2] == target_col) then
     new_opts.n_times = new_opts.n_times + 1
+
+  -- Is cursor at a "deadzone", between the edge, and target, when moving backwards?
+  -- (e.g. at line indent whitespace)
+  elseif opts.search_method == 'cover_or_prev' then
+    if init_pos[1] < target_line or (init_pos[1] == target_line and init_pos[2] < target_col) then
+      new_opts.n_times = new_opts.n_times + 1
+    end
+
+  -- Is cursor at the outer edge and considering the inner edge as target, when moving forward?
+  -- (don't allow that)
+  elseif opts.search_method == 'cover_or_next' then
+    if init_pos[1] > target_line or (init_pos[1] == target_line and init_pos[2] > target_col) then
+      new_opts.n_times = new_opts.n_times + 1
+    end
+
   end
 
   -- Compute actually needed textobject while avoiding unnecessary computation
   -- in a most common usage (`v:count1 == 1`)
-  local pos = tobj_single[tobj_side]
   if new_opts.n_times > 1 then
-    local tobj = MiniAi.find_textobject(ai_type, id, new_opts)
+    tobj = MiniAi.find_textobject('i', id, new_opts)
     if tobj == nil then return end
-    tobj.to = tobj.to or tobj.from
-    pos = tobj[tobj_side]
   end
 
+  -- === DUPLICATE BEGIN ===
+  -- Allow empty region (again)
+  if tobj.to == nil then
+    region_is_empty = true -- Need to correct col on an 'end' movement
+    tobj.to = tobj.from
+  end
+
+  -- vvvvv Unused vvvvv
+  real_line = tobj[tobj_side].line
+  real_col = tobj[tobj_side].col
+  -- ^^^^^^^^^^^^^^^^^^
+  target_line = real_line
+  target_col = real_col
+
+  if target_col > #vim.fn.getline(target_line) then
+    target_line = target_line + 1
+    target_col = vim.fn.indent(target_line)
+  elseif tobj_side == 'from' or region_is_empty or target_col == #vim.fn.getline(target_line) then
+    target_col = target_col - 1
+  end
+  -- === DUPLICATE END ===
+
+  -- Does cursor land on initial cursor position (nested objects)?
+  if (init_pos[1] == target_line) and (init_pos[2] == target_col) then
+    new_opts.n_times = new_opts.n_times + 1
+    tobj = MiniAi.find_textobject('i', id, new_opts)
+    if tobj == nil then return end
+    -- === DUPLICATE BEGIN ===
+    -- Allow empty region (again)
+    if tobj.to == nil then
+      region_is_empty = true -- Need to correct col on an 'end' movement
+      tobj.to = tobj.from
+    end
+
+    -- vvvvv Unused vvvvv
+    real_line = tobj[tobj_side].line
+    real_col = tobj[tobj_side].col
+    -- ^^^^^^^^^^^^^^^^^^
+    target_line = real_line
+    target_col = real_col
+
+    if target_col > #vim.fn.getline(target_line) then
+      target_line = target_line + 1
+      target_col = vim.fn.indent(target_line)
+    elseif tobj_side == 'from' or region_is_empty or target_col == #vim.fn.getline(target_line) then
+      target_col = target_col - 1
+    end
+    -- === DUPLICATE END ===
+  end
+
+  -- In operator-pending, don't include the last line if it closes a block
+  if mode == 'no' and tobj_side == 'to' then
+    if vim.fn.indent(target_line) == target_col then
+      target_line = target_line - 1
+      target_col = #vim.fn.getline(target_line)
+    end
+  end
+  -- ^ Todo: How to make it operate linewise?
+
   -- Move cursor and open enough folds
-  vim.api.nvim_win_set_cursor(0, { pos.line, pos.col - 1 })
+  vim.api.nvim_win_set_cursor(0, { target_line, target_col })
   vim.cmd('normal! zv')
 end
 
@@ -1158,8 +1271,10 @@ H.setup_config = function(config)
   H.check_type('mappings.inside_next', config.mappings.inside_next, 'string')
   H.check_type('mappings.around_last', config.mappings.around_last, 'string')
   H.check_type('mappings.inside_last', config.mappings.inside_last, 'string')
-  H.check_type('mappings.goto_left', config.mappings.goto_left, 'string')
-  H.check_type('mappings.goto_right', config.mappings.goto_right, 'string')
+  H.check_type('mappings.goto_next_end', config.mappings.goto_next_end, 'string')
+  H.check_type('mappings.goto_next_start', config.mappings.goto_next_start, 'string')
+  H.check_type('mappings.goto_prev_start', config.mappings.goto_prev_start, 'string')
+  H.check_type('mappings.goto_prev_end', config.mappings.goto_prev_end, 'string')
 
   H.check_type('n_lines', config.n_lines, 'number')
   H.validate_search_method(config.search_method, 'search_method')
@@ -1181,8 +1296,10 @@ H.apply_config = function(config)
     H.map(mode, lhs, rhs, opts)
   end
 
-  m({ 'n', 'x', 'o' }, maps.goto_left,  function() return H.expr_motion('left') end,   { desc = 'Move to left "around"' })
-  m({ 'n', 'x', 'o' }, maps.goto_right, function() return H.expr_motion('right') end,  { desc = 'Move to right "around"' })
+  m({ 'n', 'x', 'o' }, maps.goto_next_end, function() return H.expr_motion('cover_or_next') end, { desc = 'Move to the end of next or covering textobject' })
+  m({ 'n', 'x', 'o' }, maps.goto_next_start, function() return H.expr_motion('next') end, { desc = 'Move to the beginning of next textobject' })
+  m({ 'n', 'x', 'o' }, maps.goto_prev_start, function() return H.expr_motion('cover_or_prev') end, { desc = 'Move to the beginning of previous or covering textobject' })
+  m({ 'n', 'x', 'o' }, maps.goto_prev_end, function() return H.expr_motion('prev') end, { desc = 'Move to the end of previous textobject' })
 
   local make_tobj = function(mode, ai_type, search_method)
     return function() return H.expr_textobject(mode, ai_type, { search_method = search_method }) end
@@ -1281,13 +1398,17 @@ H.expr_textobject = function(mode, ai_type, opts)
     .. '<CR>'
 end
 
-H.expr_motion = function(side)
+H.expr_motion = function(search_method)
   if H.is_disabled() then return '' end
 
-  if not (side == 'left' or side == 'right') then H.error([[`side` should be one of 'left' or 'right'.]]) end
+  if not (search_method == 'cover_or_next' or search_method == 'next' or search_method == 'cover_or_prev' or search_method == 'prev') then
+    H.error([[`search_method` for the "goto" motions should be one of 'cover_or_next', 'next', 'cover_or_prev' or 'prev'.]])
+  end
+
+  local mode = vim.api.nvim_get_mode()['mode']
 
   -- Get user input
-  local tobj_id = H.user_textobject_id('a')
+  local tobj_id = H.user_textobject_id('i')
   if tobj_id == nil then return end
 
   -- Clear cache
@@ -1295,7 +1416,7 @@ H.expr_motion = function(side)
 
   -- Make expression for moving cursor
   return '<Cmd>lua '
-    .. string.format([[MiniAi.move_cursor('%s', 'a', %s, { n_times = %d })]], side, vim.inspect(tobj_id), vim.v.count1)
+    .. string.format([[MiniAi.move_cursor(%s, '%s', { search_method = '%s', n_times = %d })]], vim.inspect(tobj_id), mode, search_method, vim.v.count1)
     .. '<CR>'
 end
 
