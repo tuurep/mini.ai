@@ -1121,9 +1121,9 @@ H.builtin_textobjects = {
     -- Using cache allows for a dot-repeat without another user input
     if H.cache.prompted_textobject ~= nil then return H.cache.prompted_textobject end
 
-    local left = H.user_input('Left edge')
+    local left = H.user_input('Left: ')
     if left == nil or left == '' then return end
-    local right = H.user_input('Right edge')
+    local right = H.user_input('Right: ')
     if right == nil or right == '' then return end
 
     -- Clean command line from prompt messages (does not work in Visual mode)
@@ -1926,7 +1926,7 @@ H.user_input = function(prompt, text)
   end, H.ns_id.input)
 
   -- Ask for input
-  local opts = { prompt = '(mini.ai) ' .. prompt .. ': ', default = text or '' }
+  local opts = { prompt = prompt, default = text or '' }
   vim.cmd('echohl Question')
   -- Use `pcall` to allow `<C-c>` to cancel user input
   local ok, res = pcall(vim.fn.input, opts)
