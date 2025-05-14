@@ -675,6 +675,27 @@ Parameters ~
     Note: should be enclosed in `[]`.
 
 ------------------------------------------------------------------------------
+                                                 *MiniAi.gen_spec.user_prompt()*
+                     `MiniAi.gen_spec.user_prompt`({opts})
+User prompt specification
+
+Textobject taken by prompting user for the left and right edges. Has default
+`?` identifier. Prompt messages can be customized by passing options.
+
+Example: >lua
+  user_prompt({
+    left_prompt = 'Enter left edge: ',
+    right_prompt = 'Enter right edge: '
+  })
+
+Parameters ~
+{opts} `(table|nil)` Options. Allowed fields:
+  - <left_prompt> - string
+    Default: 'Left: '
+  - <right_prompt> - string
+    Default: 'Right: '
+
+------------------------------------------------------------------------------
                                                         *MiniAi.gen_spec.pair()*
                 `MiniAi.gen_spec.pair`({left}, {right}, {opts})
 Pair specification
