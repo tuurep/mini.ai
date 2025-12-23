@@ -864,10 +864,13 @@ MiniAi.gen_spec.function_call = function(opts)
   return { '%f' .. opts.name_pattern .. opts.name_pattern .. '+%b()', '^.-%(().*()%)$' }
 end
 
---- User prompt specification
+--- Specification from user prompt
 ---
---- Textobject taken by prompting user for the left and right edges. Has default
---- `?` identifier. Prompt messages can be customized by passing options.
+--- - Ask user for left and right textobject edges as raw strings (no pattern).
+--- - Construct specification for a textobject that matches from left edge string
+---   to right edge string: `a` includes both strings, `i` only insides.
+---
+--- Used for |MiniAi-builtin-textobjects| with identifier `?`.
 ---
 --- Example: >lua
 ---   user_prompt({
@@ -880,6 +883,8 @@ end
 ---     Default: 'Left: '
 ---   - <right_prompt> - string
 ---     Default: 'Right: '
+---
+---@return function Textobject specification as function.
 MiniAi.gen_spec.user_prompt = function(opts)
   opts = opts or {}
   local left_prompt = opts.left_prompt or 'Left: '
@@ -1057,35 +1062,6 @@ MiniAi.gen_spec.treesitter = function(ai_captures, opts)
       or H.get_matched_ranges_builtin
     local matched_ranges = range_querier(target_captures)
     return vim.tbl_map(ts_range_to_region, matched_ranges)
-  end
-end
-
---- Specification from user prompt
----
---- - Ask user for left and right textobject edges as raw strings (no pattern).
---- - Construct specification for a textobject that matches from left edge string
----   to right edge string: `a` includes both strings, `i` only insides.
----
---- Used for |MiniAi-builtin-textobjects| with identifier `?`.
----
----@return function Textobject specification as function.
-MiniAi.gen_spec.user_prompt = function()
-  return function()
-    -- Using cache allows for a dot-repeat without another user input
-    if H.cache.prompted_textobject ~= nil then return H.cache.prompted_textobject end
-
-    local left = H.user_input('Left edge')
-    if left == nil or left == '' then return end
-    local right = H.user_input('Right edge')
-    if right == nil or right == '' then return end
-
-    -- Clean command line from prompt messages (does not work in Visual mode)
-    vim.cmd([[echo '' | redraw]])
-
-    local left_esc, right_esc = vim.pesc(left), vim.pesc(right)
-    local res = { string.format('%s().-()%s', left_esc, right_esc) }
-    H.cache.prompted_textobject = res
-    return res
   end
 end
 

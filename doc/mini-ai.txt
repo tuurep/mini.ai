@@ -697,10 +697,13 @@ Parameters ~
 ------------------------------------------------------------------------------
                                                  *MiniAi.gen_spec.user_prompt()*
                      `MiniAi.gen_spec.user_prompt`({opts})
-User prompt specification
+Specification from user prompt
 
-Textobject taken by prompting user for the left and right edges. Has default
-`?` identifier. Prompt messages can be customized by passing options.
+- Ask user for left and right textobject edges as raw strings (no pattern).
+- Construct specification for a textobject that matches from left edge string
+  to right edge string: `a` includes both strings, `i` only insides.
+
+Used for |MiniAi-builtin-textobjects| with identifier `?`.
 
 Example: >lua
   user_prompt({
@@ -714,6 +717,9 @@ Parameters ~
     Default: 'Left: '
   - <right_prompt> - string
     Default: 'Right: '
+
+Return ~
+`(function)` Textobject specification as function.
 
 ------------------------------------------------------------------------------
                                                         *MiniAi.gen_spec.pair()*
@@ -822,20 +828,6 @@ See also ~
 - |vim.treesitter.query.get()| for how query is fetched.
 - |Query:iter_captures()| for how all query captures are iterated in case of
   no 'nvim-treesitter'.
-
-------------------------------------------------------------------------------
-                                                 *MiniAi.gen_spec.user_prompt()*
-                        `MiniAi.gen_spec.user_prompt`()
-Specification from user prompt
-
-- Ask user for left and right textobject edges as raw strings (no pattern).
-- Construct specification for a textobject that matches from left edge string
-  to right edge string: `a` includes both strings, `i` only insides.
-
-Used for |MiniAi-builtin-textobjects| with identifier `?`.
-
-Return ~
-`(function)` Textobject specification as function.
 
 ------------------------------------------------------------------------------
                                                     *MiniAi.select_textobject()*
